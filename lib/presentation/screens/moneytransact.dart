@@ -1,3 +1,7 @@
+import 'dart:math';
+
+import 'package:currency_converter/currency.dart' as currencyConverter; // Import the package's Currency enum
+import 'package:currency_converter/currency_converter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
@@ -7,8 +11,14 @@ class TransactScreen extends StatefulWidget {
   _TransactScreenState createState() => _TransactScreenState();
 }
 
-// Define the enum outside the class
 enum TransactionStep { amount, country, withdrawPin, appPin, token }
+
+enum Currency {
+  USD,
+  GBP,
+  CAD,
+  AUD,
+}
 
 class _TransactScreenState extends State<TransactScreen> {
   final TextEditingController _amountController = TextEditingController();
@@ -16,14 +26,16 @@ class _TransactScreenState extends State<TransactScreen> {
   final TextEditingController _appPinController = TextEditingController();
 
   String? selectedCountry;
+  double convertedAmount = 0.0;
   String transactionToken = '';
+  String transactionPin = '';
 
   final List<String> countries = ['USA', 'UK', 'Canada', 'Australia'];
+  String fromCurrency = 'USD'; // Replace with user's currency
+  String toCurrency = 'USD'; // This will be based on selected country
 
-  // Variable to keep track of the current step
   TransactionStep _currentStep = TransactionStep.amount;
 
-  // Function to move to the next step
   void _goToNextStep() {
     setState(() {
       if (_currentStep != TransactionStep.token) {
@@ -32,15 +44,61 @@ class _TransactScreenState extends State<TransactScreen> {
     });
   }
 
-  // Function to generate the token
+  Future<void> _convertAmount() async {
+    toCurrency = _getCountryCurrency(selectedCountry ?? '');
+    double amount = double.tryParse(_amountController.text) ?? 0.0;
+    convertedAmount = await _convertCurrency(fromCurrency, toCurrency, amount);
+    _goToNextStep();
+  }
+
+  Future<double> _convertCurrency(String from, String to, double amount) async {
+    try {
+      // Map your custom Currency enum to the package's Currency enum
+      currencyConverter.Currency fromCurrencyEnum = _mapCurrencyEnum(from);
+      currencyConverter.Currency toCurrencyEnum = _mapCurrencyEnum(to);
+
+      var conversionResult = await CurrencyConverter.convert(
+        from: fromCurrencyEnum,
+        to: toCurrencyEnum,
+        amount: amount,
+        withoutRounding: true,
+      );
+      return conversionResult ?? 0.0; // Fix the convertedAmount issue
+    } catch (e) {
+      print('Conversion error: $e');
+      return 0.0;
+    }
+  }
+
+  // Helper function to map your custom Currency enum to the package's Currency enum
+  currencyConverter.Currency _mapCurrencyEnum(String currencyCode) {
+    switch (currencyCode) {
+      case 'USD':
+        return currencyConverter.Currency.usd;
+      case 'GBP':
+        return currencyConverter.Currency.gbp;
+      case 'CAD':
+        return currencyConverter.Currency.cad;
+      case 'AUD':
+        return currencyConverter.Currency.aud;
+      default:
+        throw Exception('Unsupported currency code');
+    }
+  }
+
   void _generateToken() {
     setState(() {
       transactionToken = 'TXN-${DateTime.now().millisecondsSinceEpoch.toString().substring(0, 10)}';
+      transactionPin = _generatePin();
     });
     _goToNextStep(); // Move to the token display step
   }
 
-  // Function to copy the token to clipboard
+  String _generatePin() {
+    var rng = Random();
+    return rng.nextInt(9999).toString().padLeft(4, '0');
+  }
+
   void _copyTokenToClipboard() {
     Clipboard.setData(ClipboardData(text: transactionToken));
     ScaffoldMessenger.of(context).showSnackBar(
@@ -48,11 +106,23 @@ class _TransactScreenState extends State<TransactScreen> {
     );
   }
 
-  // Function to share the token
   void _shareToken() {
-    // Implement your share functionality here, e.g., using share package
-    // Example:
-    // Share.share('Transaction Token: $transactionToken');
+    // Implement sharing functionality here
+  }
+
+  String _getCountryCurrency(String country) {
+    switch (country) {
+      case 'USA':
+        return 'USD';
+      case 'UK':
+        return 'GBP';
+      case 'Canada':
+        return 'CAD';
+      case 'Australia':
+        return 'AUD';
+      default:
+        return 'USD';
+    }
   }
 
   @override
@@ -72,9 +142,7 @@ class _TransactScreenState extends State<TransactScreen> {
     );
   }
 
-  // Widget to build the content of the current step
   Widget _buildCurrentStepWidget() {
-    // Use a switch statement instead of pattern matching
     switch (_currentStep) {
       case TransactionStep.amount:
         return _buildTransactionStepCard(
@@ -82,7 +150,7 @@ class _TransactScreenState extends State<TransactScreen> {
             controller: _amountController,
             label: 'Enter Amount',
             hintText: 'Enter amount to send',
-            onNext: _goToNextStep,
+            onNext: _convertAmount,
           ),
         );
       case TransactionStep.country:
@@ -106,7 +174,7 @@ class _TransactScreenState extends State<TransactScreen> {
             label: 'Enter Your App Pin',
             hintText: 'Enter your 4-digit app pin',
             obscureText: true,
-            onNext: _generateToken, // Generate token on confirm
+            onNext: _generateToken,
           ),
         );
       case TransactionStep.token:
@@ -118,7 +186,6 @@ class _TransactScreenState extends State<TransactScreen> {
     }
   }
 
-  // Widget to build a card for each transaction step
   Widget _buildTransactionStepCard({required Widget child}) {
     return Center(
       child: SizedBox(
@@ -139,7 +206,6 @@ class _TransactScreenState extends State<TransactScreen> {
     );
   }
 
-  // Widget to build the token display card
   Widget _buildTokenDisplayCard() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -160,11 +226,10 @@ class _TransactScreenState extends State<TransactScreen> {
             style: TextStyle(color: Colors.white, fontSize: 17.sp, fontWeight: FontWeight.w600),
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 10),
         Text(
-          "AEWallet tokens let users manage cryptocurrency, but to withdraw funds, they must find a SpazaCoin vendor who converts tokens to local currency",
+          '4-Digit PIN: $transactionPin',
           style: TextStyle(color: Colors.white, fontSize: 16.sp),
-          textAlign: TextAlign.center,
         ),
         const SizedBox(height: 20),
         Row(
@@ -189,7 +254,6 @@ class _TransactScreenState extends State<TransactScreen> {
     );
   }
 
-  // Helper method to build the text input field
   Widget _buildInputField({
     required TextEditingController controller,
     required String label,
@@ -200,33 +264,36 @@ class _TransactScreenState extends State<TransactScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          label,
-          style: TextStyle(color: Colors.white, fontSize: 16.sp),
-        ),
-        const SizedBox(height: 8),
         TextField(
           controller: controller,
           obscureText: obscureText,
+          style: const TextStyle(color: Colors.white),
           decoration: InputDecoration(
-            filled: true,
-            fillColor: Colors.white12,
+            labelText: label,
+            labelStyle: const TextStyle(color: Colors.white),
             hintText: hintText,
-            hintStyle: TextStyle(color: Colors.white60, fontSize: 15.sp),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
+            hintStyle: const TextStyle(color: Colors.white38),
+            enabledBorder: OutlineInputBorder(
+              borderSide: const BorderSide(color: Colors.white38),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderSide: const BorderSide(color: Color(0xFFCBFF30)),
+              borderRadius: BorderRadius.circular(12),
             ),
           ),
-          style: const TextStyle(color: Colors.white),
           keyboardType: obscureText ? TextInputType.number : TextInputType.text,
-          textInputAction: TextInputAction.done,
-          onEditingComplete: onNext,
         ),
         const SizedBox(height: 20),
         ElevatedButton(
           onPressed: onNext,
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFFCBFF30),
+            foregroundColor: Colors.black,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 15),
           ),
           child: const Text('Next'),
         ),
@@ -234,46 +301,43 @@ class _TransactScreenState extends State<TransactScreen> {
     );
   }
 
-  // Helper method to build the country dropdown
   Widget _buildDropdownField({required VoidCallback onNext}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Select Country',
-          style: TextStyle(color: Colors.white, fontSize: 16.sp),
-        ),
-        const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
-          dropdownColor: const Color(0xFF282828),
+        DropdownButton<String>(
+          dropdownColor: Colors.black54,
           value: selectedCountry,
-          items: countries
-              .map((country) => DropdownMenuItem<String>(
-                    value: country,
-                    child: Text(
-                      country,
-                      style: TextStyle(color: Colors.white, fontSize: 15.sp),
-                    ),
-                  ))
-              .toList(),
-          onChanged: (newValue) {
+          hint: const Text(
+            'Select Country',
+            style: TextStyle(color: Colors.white38),
+          ),
+          isExpanded: true,
+          items: countries.map((country) {
+            return DropdownMenuItem(
+              value: country,
+              child: Text(
+                country,
+                style: const TextStyle(color: Colors.white),
+              ),
+            );
+          }).toList(),
+          onChanged: (value) {
             setState(() {
-              selectedCountry = newValue;
+              selectedCountry = value;
             });
           },
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: Colors.white12,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
         ),
         const SizedBox(height: 20),
         ElevatedButton(
-          onPressed: onNext,
+          onPressed: selectedCountry != null ? onNext : null,
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFFCBFF30),
+            foregroundColor: Colors.black,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 15),
           ),
           child: const Text('Next'),
         ),

@@ -41,6 +41,8 @@ dependencies:
   flutter_svg:
   geolocator:
   currency_converter:
+  money2:
+  solana_mobile_client:
 
 dev_dependencies:
   flutter_test:
